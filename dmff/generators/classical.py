@@ -979,6 +979,7 @@ class NonbondedGenerator:
             coval_map = topdata.buildCovMat()
             colv_pairs = np.argwhere(
                 np.logical_and(coval_map > 0, coval_map <= 3))
+
             for pair in colv_pairs:
                 if pair[0] <= pair[1]:
                     tmp = (map_prm[pair[0]], map_prm[pair[1]])
@@ -1318,6 +1319,7 @@ class LennardJonesGenerator:
             app.CutoffNonPeriodic: "CutoffNonPeriodic",
             app.PME: "CutoffPeriodic",
         }
+
         if nonbondedMethod not in methodMap:
             raise DMFFException("Illegal nonbonded method for NonbondedForce")
         methodString = methodMap[nonbondedMethod]
@@ -1342,7 +1344,7 @@ class LennardJonesGenerator:
                 type2_idx = self.atype_to_idx[atype2]
                 map_nbfix.append([type1_idx, type2_idx, nbfix_idx])
         map_nbfix = np.array(map_nbfix, dtype=int).reshape((-1, 3))
-
+        
         if methodString in ["NoCutoff", "CutoffNonPeriodic"]:
             isPBC = False
             if methodString == "NoCutoff":
@@ -1370,6 +1372,38 @@ class LennardJonesGenerator:
                                     isNoCut=isNoCut)
         ljenergy = ljforce.generate_get_energy()
 
+        # dispersion correction bisheng test
+        use_disp_corr = False
+        if "useDispersionCorrection" in kwargs and kwargs["useDispersionCorrection"]:
+            use_disp_corr = True
+            numTypes = len(self.atype_to_idx)
+            countVec = np.zeros(numTypes, dtype=int)
+            countMat = np.zeros((numTypes, numTypes), dtype=int)
+            types, count = np.unique(map_prm, return_counts=True)
+            for typ, cnt in zip(types, count):
+                countVec[typ] += cnt
+            for i in range(numTypes):
+                for j in range(i, numTypes):
+                    if i != j:
+                        countMat[i, j] = countVec[i] * countVec[j]
+                    else:
+                        countMat[i, j] = countVec[i] * (countVec[i] - 1) // 2
+            assert np.sum(countMat) == len(map_prm) * (len(map_prm) - 1) // 2
+
+            ## bisheng test, I am not sure if in openmm the 1-2 to 1-4 interaction is excluded when
+            ## calculating the dispersion correction
+            # coval_map = topdata.buildCovMat()
+            # colv_pairs = np.argwhere(
+            #     np.logical_and(coval_map > 0, coval_map <= 3))
+            # for pair in colv_pairs:
+            #     if pair[0] <= pair[1]:
+            #         tmp = (map_prm[pair[0]], map_prm[pair[1]])
+            #         t1, t2 = min(tmp), max(tmp)
+            #         countMat[t1, t2] -= 1
+                              
+            ljDispCorrForce = LennardJonesLongRangeForce(r_cut, map_prm, map_nbfix, countMat)
+            ljDispEnergyFn = ljDispCorrForce.generate_get_energy()
+
         has_aux = False
         if "has_aux" in kwargs and kwargs["has_aux"]:
             has_aux = True
@@ -1387,11 +1421,27 @@ class LennardJonesGenerator:
                            params[self.name]["epsilon_nbfix"],
                            params[self.name]["sigma_nbfix"],
                            mscales_lj)
+            # bisheng test
+            if use_disp_corr:
+                ljdispE = ljDispEnergyFn(box, params[self.name]["epsilon"],
+                            params[self.name]["sigma"], params[self.name]["epsilon_nbfix"], 
+                            params[self.name]["sigma_nbfix"])
 
-            if has_aux:
-                return ljE, aux
+                if has_aux:
+                    return ljE + ljdispE, aux
+                else:
+                    return ljE + ljdispE
             else:
-                return ljE
+                if has_aux:
+                    return ljE, aux
+                else:
+                    return ljE
+            
+            # # original code     
+            # if has_aux:
+            #     return ljE, aux
+            # else:
+            #     return ljE
 
         self._jaxPotential = potential_fn
         return potential_fn
