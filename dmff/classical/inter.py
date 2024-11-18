@@ -45,7 +45,7 @@ class LennardJonesForce:
             sig_dr6 = jnp.power(sig_dr, 6)
             sig_dr12 = jnp.power(sig_dr6, 2)
             E = 4.0 * eps * (sig_dr12 - sig_dr6)
-
+            
             if self.isSwitch:
                 x = (dr_norm - self.r_switch) / (self.r_cut - self.r_switch)
                 S = 1 - 6. * x ** 5 + 15. * x ** 4 - 10. * x ** 3
@@ -64,8 +64,9 @@ class LennardJonesForce:
             eps_mat = jnp.sqrt(eps_m1 * eps_m2 + 1e-32)
             sig_m1 = jnp.repeat(sigma.reshape((-1, 1)), sigma.shape[0], axis=1)
             sig_m2 = sig_m1.T
-            sig_mat = (sig_m1 + sig_m2) * 0.5
-            
+            # sig_mat = (sig_m1 + sig_m2) * 0.5
+            sig_mat = jnp.sqrt(sig_m1 * sig_m2) # bisheng test opls combination rule
+
             for _map in self.map_nbfix:
                 eps_mat = eps_mat.at[_map[0],_map[1]].set(epsfix[_map[2]])
                 eps_mat = eps_mat.at[_map[1],_map[0]].set(epsfix[_map[2]])
@@ -74,7 +75,7 @@ class LennardJonesForce:
 
             colv_pair = pairs[:, 2]
             mscale_pair = mscales[colv_pair-1] # in mscale vector, the 0th item is 1-2 scale, the 1st item is 1-3 scale, etc...
-
+            
             dr_vec = positions[pairs[:, 0]] - positions[pairs[:, 1]]
             prm_pair0 = map_prm[pairs[:, 0]]
             prm_pair1 = map_prm[pairs[:, 1]]
@@ -82,12 +83,14 @@ class LennardJonesForce:
             sig = sig_mat[prm_pair0, prm_pair1]
 
             eps_scale = eps * mscale_pair
-
+            
             E_inter = get_LJ_energy(dr_vec, sig, eps_scale, box)
+
             if aux is None:
                 return jnp.sum(E_inter * mask)
             else:
                 return jnp.sum(E_inter * mask), aux
+            
 
         return get_energy
 
@@ -114,7 +117,8 @@ class LennardJonesLongRangeForce:
             eps_mat = jnp.sqrt(eps_m1 * eps_m2)
             sig_m1 = jnp.repeat(sigma.reshape((-1, 1)), sigma.shape[0], axis=1)
             sig_m2 = sig_m1.T
-            sig_mat = (sig_m1 + sig_m2) * 0.5
+            # sig_mat = (sig_m1 + sig_m2) * 0.5
+            sig_mat = jnp.sqrt(sig_m1 * sig_m2) # bisheng test opls combination rule
 
             eps_mat = eps_mat.at[self.map_nbfix[:, 0], self.map_nbfix[:, 1]].set(epsfix[self.map_nbfix[:, 2]])
             sig_mat = sig_mat.at[self.map_nbfix[:, 0], self.map_nbfix[:, 1]].set(sigfix[self.map_nbfix[:, 2]])
@@ -123,7 +127,9 @@ class LennardJonesLongRangeForce:
 
             c6Mat = 4 * eps_mat * jnp.power(sig_mat, 6)
             c6 = jnp.sum(c6Mat * self.countMat) / jnp.sum(self.countMat)
-            dispCorrEnergy = -2 / 3 * jnp.pi * self.numParticles * self.numParticles / volume * c6 / jnp.power(self.r_cut, 3)
+            
+            dispCorrEnergy = -2 / 3 * jnp.pi * self.numParticles * self.numParticles / volume * c6 / jnp.power(self.r_cut, 3)            
+
             return dispCorrEnergy
         
         return get_energy
