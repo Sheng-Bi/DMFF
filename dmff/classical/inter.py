@@ -90,7 +90,28 @@ class LennardJonesForce:
                 return jnp.sum(E_inter * mask), aux
 
         return get_energy
+    
+    # bisheng #
+    def generate_get_forces(self):
+        """
+        Generate a function to calculate forces on each atom based on the LJ energy,
+        while retaining differentiability w.r.t. parameters like sigma and epsilon.
+        """
+        # Get the energy function
+        get_energy = self.generate_get_energy()
 
+        # Define the force function as the negative gradient of energy
+        # w.r.t. positions, and ensure differentiability w.r.t. parameters
+        def get_forces(positions, box, pairs, epsilon, sigma, epsfix, sigfix, mscales, aux=None):
+            # Define a wrapper for the energy function to include all parameters
+            def energy_fn(pos, eps, sig):
+                return get_energy(pos, box, pairs, eps, sig, epsfix, sigfix, mscales, aux)
+            
+            # Compute forces as the gradient of energy w.r.t. positions
+            forces = -jax.grad(lambda pos: energy_fn(pos, epsilon, sigma))(positions)
+            return forces
+
+        return get_forces
 
 class LennardJonesLongRangeForce:
     def __init__(

@@ -1369,6 +1369,8 @@ class LennardJonesGenerator:
                                     isPBC=isPBC,
                                     isNoCut=isNoCut)
         ljenergy = ljforce.generate_get_energy()
+        # bisheng #
+        ljforces = ljforce.generate_get_forces()
 
         has_aux = False
         if "has_aux" in kwargs and kwargs["has_aux"]:
@@ -1380,14 +1382,22 @@ class LennardJonesGenerator:
             # note this check will be optimized away by jit
             # it is jit-compatiable
             isinstance_jnp(positions, box, params)
-
+            # bisheng #
             ljE = ljenergy(positions, box, pairs,
                            params[self.name]["epsilon"],
                            params[self.name]["sigma"],
                            params[self.name]["epsilon_nbfix"],
                            params[self.name]["sigma_nbfix"],
                            mscales_lj)
-
+            # bisheng
+            # ljF = ljforces(positions, box, pairs,
+            #                 params[self.name]["epsilon"],
+            #                 params[self.name]["sigma"],
+            #                 params[self.name]["epsilon_nbfix"],
+            #                 params[self.name]["sigma_nbfix"],
+            #                 mscales_lj)
+            # return ljF
+        
             if has_aux:
                 return ljE, aux
             else:
